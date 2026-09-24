@@ -6330,6 +6330,18 @@
       "instance_url": "http://localhost:2742",
       "custom_item_schema_urls": {},
       "domain_id": "yellowdot_provider_internships"
+    },
+    {
+      "instance_name": "Yellow Dot Learner Local",
+      "instance_url": "http://localhost:2742",
+      "custom_item_schema_urls": {},
+      "domain_id": "yellowdot_learner"
+    },
+    {
+      "instance_name": "Yellow Dot Provider Local",
+      "instance_url": "http://localhost:2742",
+      "custom_item_schema_urls": {},
+      "domain_id": "yellowdot_provider"
     }
   ],
   "actions": {

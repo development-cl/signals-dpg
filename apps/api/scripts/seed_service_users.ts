@@ -52,6 +52,7 @@ import {
 // that adds it here.
 const SERVICES = [
   { slug: 'aggregator-dpg', user_email: 'aggregator-dpg-svc@signals.local' },
+  { slug: 'yellowdot-backend', user_email: 'yellowdot-backend-svc@signals.local' },
 ] as const;
 
 const ensure_org = async (slug: string, name: string): Promise<string> => {

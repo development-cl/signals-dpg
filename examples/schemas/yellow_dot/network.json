@@ -6383,6 +6383,307 @@
                 "₹2000+ / hr",
                 "Flexible"
               ]
+            },
+            "Target Year": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "2026",
+                  "2027",
+                  "2028",
+                  "Later"
+                ]
+              }
+            },
+            "Music Type": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Instrument",
+                  "Vocal",
+                  "Music Theory & Composition"
+                ]
+              }
+            },
+            "Sports Goal": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Learn the basics",
+                  "Improve & train",
+                  "Compete",
+                  "Fitness & health"
+                ]
+              }
+            },
+            "Language Goal": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Conversation & fluency",
+                  "Reading & writing",
+                  "Exam / certification"
+                ]
+              }
+            },
+            "Admission Year": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "2026-27",
+                  "2027-28",
+                  "Later"
+                ]
+              }
+            },
+            "Medium of Instruction": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "English",
+                  "Hindi",
+                  "Bilingual",
+                  "Other"
+                ]
+              }
+            },
+            "Stream": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Science",
+                  "Commerce",
+                  "Humanities",
+                  "Vocational",
+                  "Any"
+                ]
+              }
+            },
+            "Stream Completed": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Science",
+                  "Commerce",
+                  "Humanities",
+                  "Vocational"
+                ]
+              }
+            },
+            "School Fee Band": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Under ₹25,000 / year",
+                  "₹25,000–₹50,000 / year",
+                  "₹50,000–₹1,00,000 / year",
+                  "₹1,00,000–₹2,00,000 / year",
+                  "Above ₹2,00,000 / year"
+                ]
+              }
+            },
+            "Course Fee Band": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Under ₹50,000 / year",
+                  "₹50,000–₹1,00,000 / year",
+                  "₹1,00,000–₹2,50,000 / year",
+                  "₹2,50,000–₹5,00,000 / year",
+                  "Above ₹5,00,000 / year"
+                ]
+              }
+            },
+            "Course Duration": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "6 months",
+                  "1 year",
+                  "2 years",
+                  "3 years",
+                  "4 years",
+                  "5 years+"
+                ]
+              }
+            },
+            "Entrance Exams": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "CUET",
+                  "JEE",
+                  "NEET",
+                  "CLAT",
+                  "CAT",
+                  "NATA",
+                  "State CET",
+                  "Board marks only",
+                  "Other"
+                ]
+              }
+            },
+            "Degree": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "B.Sc",
+                  "B.Tech / B.E",
+                  "B.Com",
+                  "B.A",
+                  "BBA",
+                  "BCA",
+                  "B.Ed",
+                  "LLB",
+                  "MBBS",
+                  "B.Pharm",
+                  "Diploma",
+                  "M.Sc",
+                  "M.Tech",
+                  "M.Com",
+                  "M.A",
+                  "MBA",
+                  "MCA",
+                  "LLM",
+                  "PhD",
+                  "Certificate",
+                  "Other"
+                ]
+              }
+            },
+            "Programme Level": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Diploma",
+                  "Undergraduate",
+                  "Postgraduate",
+                  "Certificate"
+                ]
+              }
+            },
+            "Study Mode": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Full-time",
+                  "Part-time",
+                  "Distance / Online"
+                ]
+              }
+            },
+            "Minimum Qualification": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Class 10",
+                  "Class 12",
+                  "Diploma",
+                  "Undergraduate degree",
+                  "Postgraduate degree",
+                  "Pursuing undergraduate",
+                  "Pursuing postgraduate"
+                ]
+              }
+            },
+            "Learner Stage": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "School (Class 11-12)",
+                  "Undergraduate",
+                  "Postgraduate",
+                  "Diploma / Vocational"
+                ]
+              }
+            },
+            "Internship Season": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Summer",
+                  "Winter",
+                  "Ongoing / Rolling"
+                ]
+              }
+            },
+            "Positions": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "1-2",
+                  "3-5",
+                  "6-10",
+                  "11-25",
+                  "25+"
+                ]
+              }
+            },
+            "Minimum Age": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "16+",
+                  "18+"
+                ]
+              }
+            },
+            "Work Mode": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "On-site",
+                  "Hybrid",
+                  "Remote"
+                ]
+              }
+            },
+            "Stipend Band": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Unpaid",
+                  "Under ₹5,000 / month",
+                  "₹5,000–₹10,000",
+                  "₹10,000–₹20,000",
+                  "₹20,000+",
+                  "Performance-based"
+                ]
+              }
+            },
+            "Internship Duration": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Up to 4 weeks",
+                  "1-2 months",
+                  "3-6 months",
+                  "6 months+"
+                ]
+              }
             }
           }
         }

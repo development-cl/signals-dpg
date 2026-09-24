@@ -67,6 +67,7 @@ domain, `yellowdot`:
 
 - **One item per need, one item per service.** Each item carries a `Role` (`Learner` | `Provider`) and a
   `Category` (the 11 categories) as fields; the map filters on both.
+- **45 fields**: the 7 required (`Member ID`, `Role`, `Full Name`, `Phone Number`, `Email Address`, `Location`, `Category`), `Subjects`, the learner and provider preference and offer fields, and the 23 category-specific attributes (Target Year, Music Type, Sports Goal, Language Goal, Admission Year, Medium of Instruction, Stream, Stream Completed, School Fee Band, Course Fee Band, Course Duration, Entrance Exams, Degree, Programme Level, Study Mode, Minimum Qualification, Learner Stage, Internship Season, Positions, Minimum Age, Work Mode, Stipend Band, Internship Duration). Every one beyond the 7 is optional; the 23 are lists of allowed values for both roles.
 - `max_profiles_per_user: 22` - a need and a service in each of the 11 categories.
 - One connect interaction, `yellowdot -> yellowdot`, covers a learner reaching a provider and a provider
   reaching a learner (`reveals_pii_on_status: ["accepted"]`).

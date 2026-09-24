@@ -6172,6 +6172,271 @@
           }
         ]
       }
+    },
+    {
+      "description": "YellowDot members. One domain for both sides, because an account can hold items in only one domain and a person can both learn and teach: each item is one need (Role = Learner) or one service (Role = Provider) and carries its Category.",
+      "minimum_cache_ttl_seconds": 30,
+      "status_rules": [
+        {
+          "status": "new",
+          "when": {
+            "item_age_days": {
+              "lte": 7
+            }
+          }
+        },
+        {
+          "status": "active",
+          "when": {
+            "days_since_last": {
+              "buckets": [
+                "create",
+                "accept"
+              ],
+              "lte": 30
+            }
+          }
+        },
+        {
+          "status": "at_risk",
+          "when": {
+            "days_since_last": {
+              "buckets": [
+                "create",
+                "accept",
+                "reject"
+              ],
+              "between": [
+                31,
+                90
+              ]
+            }
+          }
+        },
+        {
+          "status": "inactive",
+          "when": "default"
+        }
+      ],
+      "item_schemas": {
+        "profile_1.0": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "title": "YellowDot Member Profile 1.0",
+          "display_name_field": "Full Name",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "Member ID",
+            "Role",
+            "Full Name",
+            "Phone Number",
+            "Email Address",
+            "Location",
+            "Category"
+          ],
+          "properties": {
+            "Member ID": {
+              "type": "string",
+              "minLength": 1
+            },
+            "Role": {
+              "type": "string",
+              "enum": [
+                "Learner",
+                "Provider"
+              ]
+            },
+            "Full Name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "Phone Number": {
+              "type": "string",
+              "pattern": "^[0-9]{10}$",
+              "private": true
+            },
+            "Email Address": {
+              "type": "string",
+              "format": "email",
+              "private": true
+            },
+            "Location": {
+              "type": "string",
+              "minLength": 1,
+              "location": "primary"
+            },
+            "Category": {
+              "type": "string",
+              "enum": [
+                "Academics (School Subjects)",
+                "Competitive Exams",
+                "Music",
+                "Sports & Fitness",
+                "Arts & Creativity",
+                "Skills & Technology",
+                "AI Fluency",
+                "Languages",
+                "School Admission",
+                "Higher Education",
+                "Internships"
+              ]
+            },
+            "Subjects": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "Class / Level": {
+              "type": "string"
+            },
+            "Board": {
+              "type": "string"
+            },
+            "Preferred Mode": {
+              "type": "string",
+              "enum": [
+                "Home Tuition",
+                "Online Classes",
+                "Coaching Institute",
+                "Hybrid"
+              ]
+            },
+            "Class Timing": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Morning",
+                  "Afternoon",
+                  "Evening",
+                  "Weekend"
+                ]
+              }
+            },
+            "Budget": {
+              "type": "string",
+              "enum": [
+                "Under ₹500 / hr",
+                "₹500–₹1000 / hr",
+                "₹1000–₹2000 / hr",
+                "₹2000+ / hr",
+                "Flexible"
+              ]
+            },
+            "Preferred Tutor Gender": {
+              "type": "string",
+              "enum": [
+                "Male",
+                "Female",
+                "No Preference"
+              ]
+            },
+            "Levels": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "Modes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "Days": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "Timings": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "Boards": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "Classes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "Teaching Languages": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "Fee Band": {
+              "type": "string",
+              "enum": [
+                "Under ₹500 / hr",
+                "₹500–₹1000 / hr",
+                "₹1000–₹2000 / hr",
+                "₹2000+ / hr",
+                "Flexible"
+              ]
+            }
+          }
+        }
+      },
+      "profile_completion_prompt": {
+        "heading": "Complete your profile to be found",
+        "body": "Other members can find and connect with you only once your profile is live. Fill in the details below to get matched."
+      },
+      "id": "yellowdot",
+      "contact_fields": {
+        "name": "Full Name",
+        "phone": "Phone Number",
+        "email": "Email Address"
+      },
+      "go_live_required": [
+        "schema_required",
+        "consent_required"
+      ],
+      "card": {
+        "title_field": "Full Name",
+        "avatar_from": "Full Name",
+        "default_fields": [
+          "Role",
+          "Category",
+          "Location"
+        ]
+      },
+      "dashboard_tiles": {
+        "profile": [
+          {
+            "field": "total_items",
+            "label": "Profiles Registered"
+          },
+          {
+            "field": "complete_profiles",
+            "label": "Profiles Complete"
+          },
+          {
+            "field": "has_applications",
+            "label": "Has Activity"
+          }
+        ],
+        "user": [
+          {
+            "field": "total_users",
+            "label": "Total Members"
+          },
+          {
+            "field": "avg_items_per_user",
+            "label": "Avg Profiles per Member"
+          }
+        ]
+      },
+      "max_profiles_per_user": 22
     }
   ],
   "instances": [
@@ -6342,6 +6607,12 @@
       "instance_url": "http://localhost:2742",
       "custom_item_schema_urls": {},
       "domain_id": "yellowdot_provider"
+    },
+    {
+      "instance_name": "Yellow Dot Members Local",
+      "instance_url": "http://localhost:2742",
+      "custom_item_schema_urls": {},
+      "domain_id": "yellowdot"
     }
   ],
   "actions": {
@@ -7816,6 +8087,64 @@
           "event_schema": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "title": "YellowDot Internships Provider To Learner Connect Event",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "remark"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "created",
+                  "accepted",
+                  "rejected",
+                  "cancelled"
+                ]
+              },
+              "remark": {
+                "type": "string"
+              }
+            }
+          },
+          "metric_categories": {
+            "create": [
+              "created"
+            ],
+            "accept": [
+              "accepted"
+            ],
+            "reject": [
+              "rejected"
+            ],
+            "cancel": [
+              "cancelled"
+            ]
+          },
+          "reveals_pii_on_status": [
+            "accepted"
+          ]
+        },
+        {
+          "from_network": "onest_yellow_dot",
+          "from_domain": "yellowdot",
+          "to_network": "onest_yellow_dot",
+          "to_domain": "yellowdot",
+          "requirement_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "YellowDot Member To Member Connect Requirement",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "Message": {
+                "type": "string"
+              }
+            }
+          },
+          "event_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "YellowDot Member To Member Connect Event",
             "type": "object",
             "additionalProperties": false,
             "required": [

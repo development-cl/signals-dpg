@@ -56,3 +56,26 @@ Do not use `docker compose up signals-bootstrap`/full `up` for a code-only chang
 git fetch origin && git rebase origin/main   # origin = Blue-Dots-Economy/signals-dpg
 git push --force-with-lease fork yellowdot/connect-flow
 ```
+
+## The shared `yellowdot` domain (read this before touching the domains)
+
+An account on Signals-DPG is locked to **one domain for life**, and a person on YellowDot can both learn
+and teach. So learners and providers cannot live in two domains (a dual-role person would be locked out
+of one of them), and per-category domains (`yellowdot_learner_music`, ...) cannot hold a person who has
+more than one category or who changes it. Everything YellowDot publishes therefore goes into **one**
+domain, `yellowdot`:
+
+- **One item per need, one item per service.** Each item carries a `Role` (`Learner` | `Provider`) and a
+  `Category` (the 11 categories) as fields; the map filters on both.
+- `max_profiles_per_user: 22` - a need and a service in each of the 11 categories.
+- One connect interaction, `yellowdot -> yellowdot`, covers a learner reaching a provider and a provider
+  reaching a learner (`reveals_pii_on_status: ["accepted"]`).
+- The older domains (`student`, `individual_tutor_weera_counsellor`, `yellowdot_learner`,
+  `yellowdot_provider` and the 22 per-category ones) are left in the file but YellowDot no longer uses
+  them.
+
+**Deploy note:** the domain is only served if it is in `SERVED_DOMAINS`. On the eval box that is in
+`local-setup/.env`; add `onest_yellow_dot/yellowdot` to it, then rebuild and restart `signals-api`.
+Anyone already published under an older domain is locked to it and needs a support reset
+(`delete from items where created_by = ...; update "user" set domains = '{}' where id = ...`) before they
+can be published here.

@@ -551,7 +551,8 @@
             "label": "Avg Profiles per Learner"
           }
         ]
-      }
+      },
+      "max_profiles_per_user": 11
     },
     {
       "description": "YellowDot's own richer provider domain - the full match criteria (category, subjects, levels, modes, days, timings, boards, classes, languages, fee band) instead of the standard schema's 3-4 value enums.",
@@ -763,7 +764,8 @@
             "label": "Avg Profiles per Provider"
           }
         ]
-      }
+      },
+      "max_profiles_per_user": 11
     },
     {
       "description": "YellowDot learner domain for Academics (School Subjects) - tailored match criteria for this category.",

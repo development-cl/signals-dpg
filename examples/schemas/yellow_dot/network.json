@@ -6278,7 +6278,8 @@
                 "Languages",
                 "School Admission",
                 "Higher Education",
-                "Internships"
+                "Internships",
+                "Entrepreneurship"
               ]
             },
             "Subjects": {
@@ -6684,8 +6685,83 @@
                   "6 months+"
                 ]
               }
+            },
+            "Entrepreneurial Identity": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Aspiring entrepreneur",
+                  "Student entrepreneur",
+                  "First-time founder",
+                  "Existing business owner",
+                  "Serial entrepreneur",
+                  "Social entrepreneur"
+                ]
+              }
+            },
+            "Entrepreneurial Stage": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Exploring",
+                  "Idea",
+                  "Building",
+                  "Launched",
+                  "Scaling"
+                ]
+              }
+            },
+            "Sector": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Technology / AI",
+                  "Education",
+                  "Healthcare",
+                  "Agriculture / Food",
+                  "Manufacturing",
+                  "Retail / D2C",
+                  "Financial services",
+                  "Climate / Sustainability",
+                  "Media / Creative",
+                  "Professional services",
+                  "Social impact",
+                  "Other"
+                ]
+              }
+            },
+            "Ambition": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Start a venture",
+                  "Build a sustainable business",
+                  "Create employment",
+                  "Solve a social problem",
+                  "Scale nationally",
+                  "Expand globally"
+                ]
+              }
+            },
+            "What I Have": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "An idea",
+                  "A product or solution",
+                  "Skills and expertise",
+                  "A team or network",
+                  "Resources or capital",
+                  "An existing business"
+                ]
+              }
             }
-          }
+            }
         }
       },
       "profile_completion_prompt": {
@@ -6737,7 +6813,7 @@
           }
         ]
       },
-      "max_profiles_per_user": 22
+      "max_profiles_per_user": 24
     }
   ],
   "instances": [

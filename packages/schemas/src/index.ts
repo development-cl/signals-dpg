@@ -24,6 +24,14 @@ export {
   getDomainItemSchema,
   getInstanceCustomItemSchemaUrl,
   getInteractionPiiRevealStatuses,
+  getInteractionExportRequesterDomains,
+  getInteractionColumnFields,
+  interactionInputOf,
+  type ActionInteractionInput,
+  type ActionRowSides,
+  getExportableCounterparties,
+  getExportableStatuses,
+  type ExportableCounterparty,
   PROFILE_GO_LIVE_GATES,
   type GoLiveGate,
   type MetricCategoryAsymmetry,
@@ -32,6 +40,7 @@ export {
   parseNetworkConfigDocument,
   type NetworkConfigDocument,
   validateAgainstJsonSchema,
+  JsonSchemaValidationError,
 } from './network_workflow';
 export {
   parseLocationFields,

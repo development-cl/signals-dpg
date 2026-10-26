@@ -1,5 +1,5 @@
 import type {
-  FastifyPluginAsync,
+  FastifyPluginCallback,
   FastifyReply,
   FastifyRequest,
 } from 'fastify';
@@ -8,11 +8,9 @@ import { eq, or } from 'drizzle-orm';
 import { db } from '@api/db/postgres/drizzle_config';
 import { ensureItemPartition, items } from '@dpg/database';
 import { user } from '../../../../db/postgres/schema/auth.js';
-import { authInstance } from '@/routes/auth/create_auth';
 import { create_profile_item } from '@/lib/profile_item';
 import { resolveDefaultAggregator } from '@/services/aggregator/default_aggregator';
 import { updateItemInternal, type DbOrTx } from '@/services/item_service';
-import { authConfig } from '@/config';
 import {
   publishItemEvent,
   publishItemEvents,
@@ -49,7 +47,9 @@ import { insertLocalUser } from '@/services/auth/user_writer';
  */
 type UpsertRequest = FastifyRequest<{ Body: UpsertBody }>;
 
-export const participant: FastifyPluginAsync = async (app) => {
+// Callback-style: registering a route is synchronous, so there is nothing to
+// await (an async plugin with no await is Sonar S7503).
+export const participant: FastifyPluginCallback = (app, _opts, done) => {
   app.route({
     url: '/participant',
     method: 'POST',
@@ -60,6 +60,7 @@ export const participant: FastifyPluginAsync = async (app) => {
     },
     handler: participant_handler,
   });
+  done();
 };
 
 // ---------------------------------------------------------------------------
@@ -72,9 +73,9 @@ type OnboardingFields = {
   /**
    * The aggregator that owns this participant, or null when nobody does yet.
    *
-   * SS-3 (#640): this is NO LONGER simply the acting org. A `voice` or
-   * `network_service` caller is not an aggregator — the voice agent is hosted
-   * by the network, so a cold inbound caller genuinely has no aggregator — and
+   * SS-3 (#640): this is NO LONGER simply the acting org. A `network_service`
+   * caller is not an aggregator — the voice agent is hosted by the network, so
+   * a cold inbound caller genuinely has no aggregator of its own — and
    * tagging them to the network's own org satisfies "every entrant has an
    * owner" on paper while leaving a verification queue nobody would open.
    * Those callers resolve the instance's DEFAULT aggregator instead, and get
@@ -110,9 +111,9 @@ export const DOMAIN_REQUIRED_FOR_DEFAULT = {
 /**
  * Who owns a participant created through this route.
  *
- * An aggregator caller owns the participants it onboards, unchanged. Any other
- * caller (`voice`, `network_service`) is not an aggregator — the voice agent is
- * hosted by the network, so a cold inbound caller genuinely has no aggregator —
+ * An aggregator caller owns the participants it onboards, unchanged. A
+ * `network_service` caller is not an aggregator — the voice agent is hosted by
+ * the network, so a cold inbound caller genuinely has no aggregator of its own —
  * and falls back to the default nominated for the binding it is joining.
  *
  * `domain` is REQUIRED on that branch. The request schema marks it optional
@@ -131,7 +132,7 @@ export const DOMAIN_REQUIRED_FOR_DEFAULT = {
  */
 async function resolveOnboardingOwnerOrg(
   exec: DbOrTx,
-  acting: { org_id: string; org_type: 'aggregator' | 'voice' | 'network_service' },
+  acting: { org_id: string; org_type: 'aggregator' | 'network_service' },
   network: string,
   domain: string | undefined,
   log: FastifyRequest['log'],
@@ -178,16 +179,13 @@ const buildOnboardingSet = (f: OnboardingFields) => ({
 // runs whatever else the caller needs in the same transaction, and finally mints
 // the Keycloak identity.
 //
-// Two ways the row gets created, chosen by AUTH_PROVIDER:
+// `insertLocalUser` writes the row directly, INSIDE the transaction that also
+// carries the onboarding columns and the caller's work. So a failure anywhere
+// rolls the whole thing back and there is no orphan to clean up.
 //
-//   keycloak    `insertLocalUser` writes it directly, INSIDE the transaction that
-//               also carries the onboarding columns and the caller's work. So a
-//               failure anywhere rolls the whole thing back and there is no
-//               orphan to clean up.
-//   betterauth  `signUpEmail` writes it first and outside any transaction (that
-//               is better-auth's own API), so the row is already committed when
-//               the transaction starts — and an orphan IS possible, hence the
-//               compensating delete below.
+// (Until #517 there was a second path here: under `AUTH_PROVIDER=betterauth`,
+// `signUpEmail` wrote the row first and outside any transaction, which could
+// orphan it. That path went with the library.)
 //
 // Used by two branches: `account_only` (no item) and `create_new_user` (which
 // also creates the profile item). Both supply `withinTx`; neither owns a
@@ -198,7 +196,18 @@ const buildOnboardingSet = (f: OnboardingFields) => ({
 
 type SignUpResult =
   | { ok: true; user_id: string }
-  | { ok: false; statusCode: number; error: string; message: string };
+  | {
+      ok: false;
+      statusCode: number;
+      error: string;
+      message: string;
+      /**
+       * A typed client error's curated extras (e.g. INVALID_ITEM_STATE's
+       * per-field `fields`), merged into the error body — the same body the
+       * existing-user branches return via replyItemWriteFailure.
+       */
+      details?: Record<string, unknown>;
+    };
 
 /** Shape both branches share for classifying a write failure. */
 function isUniqueViolation(err: unknown): boolean {
@@ -233,67 +242,50 @@ async function signUpAndOnboardUser(params: {
   withinTx: (tx: DbOrTx, user_id: string) => Promise<void>;
 }): Promise<SignUpResult> {
   const { email_norm, name, fields, log, withinTx } = params;
-  const keycloak = authConfig.keycloak_enabled;
 
-  // Under Keycloak signals owns the id, and it must be a bare UUID because it
-  // becomes the Keycloak `sub` (enforced by insertLocalUser).
-  let user_id: string = randomUUID();
-  /** Only ever true on the better-auth path — see the header note. */
-  let rowCommittedOutsideTx = false;
-
-  if (!keycloak) {
-    const signedUp = await signUpViaBetterAuth(email_norm, name, log);
-    if (!signedUp.ok) return signedUp;
-    user_id = signedUp.user_id;
-    rowCommittedOutsideTx = true;
-  }
+  // Signals owns the id, and it must be a bare UUID because it becomes the
+  // Keycloak `sub` (enforced by insertLocalUser).
+  const user_id: string = randomUUID();
 
   try {
     await db.transaction(async (tx) => {
-      if (keycloak) {
-        // The row and its onboarding columns in one insert — there is no
-        // separate update to sequence, and nothing to orphan if the rest of the
-        // transaction fails. Consent booleans are deliberately not written here;
-        // consent lives in the ledger (#309), which `withinTx` records.
-        const written = await insertLocalUser(
-          {
-            id: user_id,
-            name,
-            email: email_norm,
-            // Onboarding by an aggregator proves nothing about the identifier;
-            // the OTP login is what verifies it.
-            emailVerified: false,
-            phoneNumber: fields.phone_norm,
-            phoneNumberVerified: false,
-            extra: buildOnboardingSet(fields),
-          },
-          log,
-          tx
-        );
+      // The row and its onboarding columns in one insert — there is no separate
+      // update to sequence, and nothing to orphan if the rest of the transaction
+      // fails. Consent booleans are deliberately not written here; consent lives
+      // in the ledger (#309), which `withinTx` records.
+      const written = await insertLocalUser(
+        {
+          id: user_id,
+          name,
+          email: email_norm,
+          // Onboarding by an aggregator proves nothing about the identifier;
+          // the OTP login is what verifies it.
+          emailVerified: false,
+          phoneNumber: fields.phone_norm,
+          phoneNumberVerified: false,
+          extra: buildOnboardingSet(fields),
+        },
+        log,
+        tx
+      );
 
-        if (!written.ok) {
-          // Thrown so the transaction rolls back; classified by the catch below.
-          throw Object.assign(new Error(written.message), {
-            statusCode: written.code === 'IDENTITY_CONFLICT' ? 409 : 500,
-            errorCode:
-              written.code === 'IDENTITY_CONFLICT' ? 'USER_ALREADY_EXISTS' : 'ONBOARD_FAILED',
-          });
-        }
-      } else {
-        await tx.update(user).set(buildOnboardingSet(fields)).where(eq(user.id, user_id));
+      if (!written.ok) {
+        // Thrown so the transaction rolls back; classified by the catch below.
+        throw Object.assign(new Error(written.message), {
+          statusCode: written.code === 'IDENTITY_CONFLICT' ? 409 : 500,
+          errorCode:
+            written.code === 'IDENTITY_CONFLICT' ? 'USER_ALREADY_EXISTS' : 'ONBOARD_FAILED',
+        });
       }
 
       await withinTx(tx, user_id);
     });
   } catch (updateErr: unknown) {
-    // Orphan cleanup, better-auth path only. Under Keycloak the row was written
-    // inside the transaction that just rolled back, so deleting here would at
-    // best be a no-op and at worst remove a *different* row that happened to
-    // reuse the id.
-    if (rowCommittedOutsideTx) {
-      await deleteOrphanUser(user_id, log, {}, 'cleaned up orphan user after update/tx failed');
-    }
-
+    // No orphan cleanup here: the row was written inside the transaction that
+    // just rolled back, so deleting would at best be a no-op and at worst remove
+    // a *different* row that happened to reuse the id. (The better-auth path,
+    // which committed its row outside the transaction and so could orphan one,
+    // is gone with the library — #517.)
     return classifyOnboardFailure(updateErr, log);
   }
 
@@ -334,42 +326,6 @@ async function signUpAndOnboardUser(params: {
   return { ok: true, user_id };
 }
 
-/** better-auth signup (writes the user row itself, outside any transaction). */
-async function signUpViaBetterAuth(
-  email_norm: string | null,
-  name: string,
-  log: FastifyRequest['log'],
-): Promise<SignUpResult> {
-  const email_for_signup = email_norm ?? `${randomUUID()}@no-email.local`;
-  try {
-    const signed_up = await authInstance.api.signUpEmail({
-      body: {
-        email: email_for_signup,
-        password: randomUUID(),
-        name,
-      },
-    });
-    return { ok: true, user_id: signed_up.user.id };
-  } catch (signupErr: unknown) {
-    if (isUniqueViolation(signupErr)) {
-      log.warn({ err: signupErr }, 'signUp race; user exists now');
-      return {
-        ok: false,
-        statusCode: 409,
-        error: 'USER_ALREADY_EXISTS',
-        message: 'email or phone already in use (race) — retry the request',
-      };
-    }
-    log.error({ err: signupErr }, 'signUp failed during onboarding');
-    return {
-      ok: false,
-      statusCode: 500,
-      error: 'ONBOARD_FAILED',
-      message: 'could not onboard participant',
-    };
-  }
-}
-
 /** Best-effort orphan removal; a failed delete is logged for manual cleanup. */
 async function deleteOrphanUser(
   user_id: string,
@@ -399,16 +355,21 @@ function classifyOnboardFailure(
     cause?: { code?: string };
     statusCode?: number;
     errorCode?: string;
+    details?: Record<string, unknown>;
   } | null;
 
   // Propagate typed service errors (e.g. from create_profile_item, or the
-  // insert failure re-thrown above).
+  // insert failure re-thrown above). A client error keeps its curated details
+  // (INVALID_ITEM_STATE's `fields`), so a new participant's rejection carries
+  // the same body as an existing participant's.
   if (e?.statusCode && e?.errorCode) {
+    const isClientError = e.statusCode >= 400 && e.statusCode < 500;
     return {
       ok: false,
       statusCode: e.statusCode,
       error: e.errorCode,
       message: e.message ?? 'request rejected',
+      ...(isClientError && e.details ? { details: e.details } : {}),
     };
   }
 
@@ -597,12 +558,20 @@ function replyItemWriteFailure(
     fallbackMessage: string;
   },
 ) {
-  const e = err as { statusCode?: number; errorCode?: string };
+  const e = err as {
+    statusCode?: number;
+    errorCode?: string;
+    details?: Record<string, unknown>;
+  };
   const isClientError =
     typeof e.statusCode === 'number' && e.statusCode >= 400 && e.statusCode < 500;
   const logger = isClientError ? ctx.request.log.warn : ctx.request.log.error;
   logger.call(ctx.request.log, { err, ...opts.logContext }, opts.logMessage);
   return ctx.reply.code(e.statusCode ?? 500).send({
+    // A typed client error's curated extras (e.g. INVALID_ITEM_STATE's per-field
+    // `fields`) — never an untyped error's, whose shape is unknown. Spread first
+    // so it cannot override the error code or message.
+    ...(isClientError && e.errorCode ? e.details : undefined),
     error: e.errorCode ?? opts.fallbackError,
     message: e.errorCode ? (err as Error).message : opts.fallbackMessage,
   });
@@ -655,11 +624,11 @@ async function existingUserOk(
  * onboarded user's local row already exists (insertLocalUser), so
  * provisioning.createMirror is skipped on first login and never sends Welcome.
  * `actingOrgType: 'aggregator'` is hard-coded deliberately: every service-org
- * onboarder (aggregator, network_service, voice) lands here, and all get the
+ * onboarder (aggregator, network_service) lands here, and all get the
  * initiation email — the self create/Welcome path is suppressed for all of
  * them, so collapsing them to the aggregator copy prevents a missed onboarding
- * email. (A network_service/voice onboard is thus described as an aggregator in
- * the copy — accepted.)
+ * email. (A network_service onboard is thus described as an aggregator in the
+ * copy — accepted.)
  * Fire-and-forget, lazy-imported to keep the notification chain off this
  * route's static graph.
  */
@@ -732,7 +701,9 @@ async function handleAccountOnlyNewUser(ctx: ParticipantCtx) {
   });
 
   if (!result.ok) {
+    // `details` spread first so it can never override the error code or message.
     return reply.code(result.statusCode).send({
+      ...result.details,
       error: result.error,
       message: result.message,
     });
@@ -1070,7 +1041,9 @@ async function handleCreateNewUser(ctx: ParticipantCtx) {
   });
 
   if (!result.ok) {
+    // `details` spread first so it can never override the error code or message.
     return reply.code(result.statusCode).send({
+      ...result.details,
       error: result.error,
       message: result.message,
     });
@@ -1147,7 +1120,7 @@ export const participant_handler = async (
       message:
         verdict.error === 'INVALID_ACTING_ORG'
           ? 'acting_org is required for /admin/participant'
-          : 'only aggregator, network_service or voice acting orgs are allowed',
+          : 'only aggregator or network_service acting orgs are allowed',
     });
   }
 

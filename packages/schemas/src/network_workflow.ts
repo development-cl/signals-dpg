@@ -1,6 +1,6 @@
-import Ajv2020 from 'ajv/dist/2020.js';
+import Ajv2020, { type ErrorObject } from 'ajv/dist/2020.js';
 import { z } from 'zod';
-import { applyUriPatterns } from './uri_fields';
+import { applyUriPatterns, isUriField } from './uri_fields';
 
 const JsonSchemaDocumentSchema = z.record(z.string(), z.unknown());
 
@@ -243,8 +243,41 @@ export const NetworkActionInteractionSchema = z
     event_schema: JsonSchemaDocumentSchema.optional(),
     metric_categories: MetricCategoriesSchema.nullable().optional(),
     reveals_pii_on_status: z.array(z.string().min(1)).optional().default([]),
+    // Bulk-export eligibility (#639 / #769). Absent ⇒ this interaction's
+    // engagements cannot be exported (fail-closed). `requester_domains` names
+    // which side(s) may export their counterparty; it never widens disclosure —
+    // the per-row reveal is still gated by `reveals_pii_on_status`.
+    export: z
+      .object({ requester_domains: z.array(z.string().min(1)).min(1) })
+      .strict()
+      .optional(),
+    // Fields of each side's item shown to the OTHER side in the My Actions
+    // list (e.g. a seeker's education and experience to the provider they
+    // applied to). `from` = fields of the from item, `to` = fields of the to
+    // item. Only non-private item_state fields are ever returned — a private
+    // or undeclared field listed here is dropped server-side, so this can never
+    // show personal data before the reveal. Absent ⇒ no summary.
+    column_fields: z
+      .object({
+        from: z.array(z.string().min(1)).optional().default([]),
+        to: z.array(z.string().min(1)).optional().default([]),
+      })
+      .strict()
+      .optional(),
   })
   .superRefine((interaction, ctx) => {
+    // A requester must be a party to the engagement: a domain outside the
+    // interaction can never own either side of one of its actions, so naming it
+    // is always a config mistake.
+    for (const [idx, domain] of (interaction.export?.requester_domains ?? []).entries()) {
+      if (domain === interaction.from_domain || domain === interaction.to_domain) continue;
+      ctx.addIssue({
+        code: 'custom',
+        message: `export.requester_domains value "${domain}" is not a party to this interaction (from_domain "${interaction.from_domain}", to_domain "${interaction.to_domain}")`,
+        path: ['export', 'requester_domains', idx],
+      });
+    }
+
     if (interaction.reveals_pii_on_status.length === 0) return;
 
     if (!interaction.event_schema) {
@@ -478,6 +511,41 @@ export function parseNetworkConfigDocument(
   return NetworkConfigSchema.parse(input);
 }
 
+/** Which interaction of a network an action is: its type and both sides. */
+export interface ActionInteractionInput {
+  actionType: string;
+  fromNetwork: string;
+  fromDomain: string;
+  fromItemType?: string;
+  toNetwork: string;
+  toDomain: string;
+  toItemType?: string;
+}
+
+/** The sides of a stored `item_actions` row, as the interaction lookups read them. */
+export interface ActionRowSides {
+  action_type: string;
+  source_item_network: string;
+  source_item_domain: string;
+  source_item_type: string;
+  target_item_network: string;
+  target_item_domain: string;
+  target_item_type: string;
+}
+
+/** The interaction lookup input for a stored action row. */
+export function interactionInputOf(row: ActionRowSides): ActionInteractionInput {
+  return {
+    actionType: row.action_type,
+    fromNetwork: row.source_item_network,
+    fromDomain: row.source_item_domain,
+    fromItemType: row.source_item_type,
+    toNetwork: row.target_item_network,
+    toDomain: row.target_item_domain,
+    toItemType: row.target_item_type,
+  };
+}
+
 export function getActionInteraction(
   networkConfig: NetworkConfigDocument,
   input: {
@@ -536,6 +604,62 @@ export function getInteractionPiiRevealStatuses(
   const interaction = getActionInteraction(networkConfig, input);
   return interaction.reveals_pii_on_status;
 }
+
+/**
+ * Domains allowed to bulk-export the counterparty of this interaction's
+ * actions (#769). Empty when the interaction declares no `export` block.
+ *
+ * @throws Error when the network does not declare the interaction — same
+ *   contract as {@link getInteractionPiiRevealStatuses}.
+ */
+export function getInteractionExportRequesterDomains(
+  networkConfig: NetworkConfigDocument,
+  input: {
+    actionType: string;
+    fromNetwork: string;
+    fromDomain: string;
+    fromItemType?: string;
+    toNetwork: string;
+    toDomain: string;
+    toItemType?: string;
+  }
+): readonly string[] {
+  const interaction = getActionInteraction(networkConfig, input);
+  return interaction.export?.requester_domains ?? [];
+}
+
+/**
+ * The counterparty fields to summarise for a viewer on one side of this
+ * interaction: the viewer owning the `to` item sees `column_fields.from`, the
+ * viewer owning the `from` item sees `column_fields.to`. Field names only —
+ * the caller must still drop private/undeclared fields for the item's schema.
+ *
+ * @throws Error when the network does not declare the interaction — same
+ *   contract as {@link getInteractionPiiRevealStatuses}.
+ */
+export function getInteractionColumnFields(
+  networkConfig: NetworkConfigDocument,
+  input: {
+    actionType: string;
+    fromNetwork: string;
+    fromDomain: string;
+    fromItemType?: string;
+    toNetwork: string;
+    toDomain: string;
+    toItemType?: string;
+  },
+  counterpartySide: 'from' | 'to'
+): readonly string[] {
+  const interaction = getActionInteraction(networkConfig, input);
+  return interaction.column_fields?.[counterpartySide] ?? [];
+}
+
+// Lives in a dependency-free module so the UI can import it too.
+export {
+  getExportableCounterparties,
+  getExportableStatuses,
+  type ExportableCounterparty,
+} from './export_eligibility';
 
 function matchesAllowedItemType(
   allowedItemTypes: string[],
@@ -636,6 +760,87 @@ export function getInstanceCustomItemSchemaUrl(
   );
 }
 
+/**
+ * A payload that failed its JSON Schema, with one readable message per field.
+ *
+ * `message` keeps the historical `Invalid <label>: …` shape (now naming each
+ * field), so callers that only read the message keep working. `fields` is the
+ * same information keyed by field path, for callers that want to point at the
+ * offending input — a bulk CSV column, a form field.
+ */
+export class JsonSchemaValidationError extends Error {
+  readonly fields: Record<string, string>;
+  constructor(label: string, fields: Record<string, string>, rootMessages: string[]) {
+    const parts = [
+      ...Object.entries(fields).map(([field, msg]) => `${field}: ${msg}`),
+      ...rootMessages,
+    ];
+    super(`Invalid ${label}: ${parts.join(', ') || 'unknown validation error'}`);
+    this.name = 'JsonSchemaValidationError';
+    this.fields = fields;
+  }
+}
+
+/** Per-field copy for a failed `pattern`, authored in network.json (mirrors the UI marker). */
+const FIELD_ERROR_MESSAGE_MARKER = 'x-error-message';
+
+/** `/address/city` → `address.city`; array indices stay as segments (`tags.0`). */
+function toFieldPath(instancePath: string, child?: string): string {
+  const segments = instancePath.split('/').filter(Boolean);
+  if (child) segments.push(child);
+  return segments.join('.');
+}
+
+/**
+ * One ajv error → `[field, message]`, worded the way the profile form words it
+ * (apps/ui/src/components/forms/field-error-message.ts). A failed `pattern`
+ * never surfaces the raw regex: the field's `x-error-message` wins, then the
+ * URL copy for an `x-uri` field, then a generic naming the field.
+ */
+function describeAjvError(error: ErrorObject): [string, string] {
+  const params = error.params as Record<string, unknown>;
+  const parent = (error.parentSchema ?? {}) as Record<string, unknown>;
+  switch (error.keyword) {
+    case 'required':
+      return [toFieldPath(error.instancePath, String(params.missingProperty)), 'is required'];
+    case 'additionalProperties':
+      return [
+        toFieldPath(error.instancePath, String(params.additionalProperty)),
+        'is not an allowed field',
+      ];
+    case 'unevaluatedProperties':
+      return [
+        toFieldPath(error.instancePath, String(params.unevaluatedProperty)),
+        'is not an allowed field',
+      ];
+    case 'minLength':
+      // `minLength: 1` is how a schema says "required and not blank".
+      if (params.limit === 1) return [toFieldPath(error.instancePath), 'is required'];
+      return [toFieldPath(error.instancePath), error.message ?? 'is invalid'];
+    case 'enum': {
+      const allowed = Array.isArray(params.allowedValues) ? params.allowedValues : [];
+      const shown = allowed.slice(0, 10).map(String).join(', ');
+      return [
+        toFieldPath(error.instancePath),
+        `must be one of: ${shown}${allowed.length > 10 ? ', …' : ''}`,
+      ];
+    }
+    case 'pattern': {
+      const authored = parent[FIELD_ERROR_MESSAGE_MARKER];
+      if (typeof authored === 'string' && authored.trim()) {
+        return [toFieldPath(error.instancePath), authored];
+      }
+      if (isUriField(parent)) {
+        return [toFieldPath(error.instancePath), 'Please enter a valid web address.'];
+      }
+      const title = typeof parent.title === 'string' && parent.title.trim() ? parent.title : 'value';
+      return [toFieldPath(error.instancePath), `Please enter a valid ${title}.`];
+    }
+    default:
+      return [toFieldPath(error.instancePath), error.message ?? 'is invalid'];
+  }
+}
+
 export function validateAgainstJsonSchema(
   schema: Record<string, unknown>,
   payload: unknown,
@@ -656,14 +861,20 @@ export function validateAgainstJsonSchema(
     : schemaWithUriPatterns;
   const finalSchema =
     ignoredKeys.length > 0
-      ? omitRequiredSchemaKeys(schemaForValidation, ignoredKeys)
+      ? relaxIgnoredProperties(omitRequiredSchemaKeys(schemaForValidation, ignoredKeys), ignoredKeys)
       : schemaForValidation;
-  const finalPayload =
-    ignoredKeys.length > 0 ? omitObjectKeys(payload, ignoredKeys) : payload;
+  // Ignored keys keep their VALUES in the payload, so an `if` condition can
+  // read them (e.g. category === 'licensed' → more fields required); their own
+  // property schemas are relaxed to `{}` in `relaxIgnoredProperties` instead,
+  // so the values are still not validated — the same outcome as dropping them.
+  const finalPayload = payload;
 
   const ajv = new Ajv2020({
     strict: false,
     allErrors: true,
+    // Puts each failing keyword's own schema on the error (`parentSchema`), so a
+    // failed pattern can use the field's `x-error-message` instead of the regex.
+    verbose: true,
   });
 
   const validate = ajv.compile(finalSchema);
@@ -673,28 +884,61 @@ export function validateAgainstJsonSchema(
     return;
   }
 
-  const message =
-    validate.errors?.map((error) => error.message).filter(Boolean).join(', ') ||
-    'unknown validation error';
-
-  throw new Error(`Invalid ${label}: ${message}`);
-}
-
-function omitObjectKeys(input: unknown, ignoredKeys: readonly string[]) {
-  if (!isPlainObject(input)) {
-    return input;
+  // First message per field: allErrors can report the same field more than once
+  // (e.g. a failed type then a failed pattern), and one actionable line per
+  // field reads better than a pile-up. Errors on the payload root (no field)
+  // are kept as plain messages.
+  const fields: Record<string, string> = {};
+  const rootMessages: string[] = [];
+  for (const error of validate.errors ?? []) {
+    // An `if` error only summarises its branch ("must match \"then\" schema");
+    // the branch's own errors are already in the list and name their fields.
+    if (error.keyword === 'if') continue;
+    const [field, message] = describeAjvError(error);
+    if (!field) {
+      if (!rootMessages.includes(message)) rootMessages.push(message);
+    } else if (!(field in fields)) {
+      fields[field] = message;
+    }
   }
 
-  return Object.fromEntries(
-    Object.entries(input).filter(([key]) => !ignoredKeys.includes(key))
-  );
+  throw new JsonSchemaValidationError(label, fields, rootMessages);
 }
 
+/** JSON Schema keyword whose subtree `omitRequiredSchemaKeys` leaves untouched. */
+const IF_KEYWORD = new Set(['if']);
+
+/**
+ * Replaces each ignored key's own top-level property schema with `{}` (accept
+ * anything), keeping the key declared so `additionalProperties: false` still
+ * allows it. Paired with keeping the values in the payload, ignored keys are
+ * readable by conditions yet not validated — what dropping them achieved.
+ */
+function relaxIgnoredProperties(
+  schema: Record<string, unknown>,
+  ignoredKeys: readonly string[]
+): Record<string, unknown> {
+  const properties = schema.properties;
+  if (!isPlainObject(properties)) return schema;
+  return {
+    ...schema,
+    properties: Object.fromEntries(
+      Object.entries(properties).map(([key, value]) => [key, ignoredKeys.includes(key) ? {} : value])
+    ),
+  };
+}
+
+/**
+ * Drops `ignoredKeys` from every `required` list, so the payload may omit them —
+ * EXCEPT inside an `if` subschema. There `required` is part of a test ("is the
+ * category present and `licensed`?"), not a requirement: stripping it would turn the
+ * test vacuously true and apply its `then` to every payload.
+ */
 function omitRequiredSchemaKeys(
   schema: Record<string, unknown>,
   ignoredKeys: readonly string[]
 ): Record<string, unknown> {
-  return rewriteJsonSchema(schema, (value) => {
+  return rewriteJsonSchema(schema, IF_KEYWORD, (value) => {
     const required = value.required;
 
     if (!Array.isArray(required)) {
@@ -713,7 +957,7 @@ function omitRequiredSchemaKeys(
 function allowAdditionalProperties(
   schema: Record<string, unknown>
 ): Record<string, unknown> {
-  return rewriteJsonSchema(schema, (value) => {
+  return rewriteJsonSchema(schema, NO_SKIP, (value) => {
     const next = { ...value };
 
     if (next.additionalProperties === false) {
@@ -728,15 +972,20 @@ function allowAdditionalProperties(
   });
 }
 
+/**
+ * Rewrites every object in a schema, bottom-up. Subtrees under a key in
+ * `skipKeys` are copied unchanged (used to leave `if` conditions alone).
+ */
 function rewriteJsonSchema(
   schema: Record<string, unknown>,
+  skipKeys: ReadonlySet<string>,
   rewriteObject: (value: Record<string, unknown>) => Record<string, unknown>
 ): Record<string, unknown> {
   return rewriteObject(
     Object.fromEntries(
       Object.entries(schema).map(([key, value]) => [
         key,
-        rewriteJsonValue(value, rewriteObject),
+        skipKeys.has(key) ? value : rewriteJsonValue(value, skipKeys, rewriteObject),
       ])
     )
   );
@@ -744,18 +993,21 @@ function rewriteJsonSchema(
 
 function rewriteJsonValue(
   value: unknown,
+  skipKeys: ReadonlySet<string>,
   rewriteObject: (value: Record<string, unknown>) => Record<string, unknown>
 ): unknown {
   if (Array.isArray(value)) {
-    return value.map((entry) => rewriteJsonValue(entry, rewriteObject));
+    return value.map((entry) => rewriteJsonValue(entry, skipKeys, rewriteObject));
   }
 
   if (isPlainObject(value)) {
-    return rewriteJsonSchema(value, rewriteObject);
+    return rewriteJsonSchema(value, skipKeys, rewriteObject);
   }
 
   return value;
 }
+
+const NO_SKIP: ReadonlySet<string> = new Set();
 
 function isPlainObject(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input);

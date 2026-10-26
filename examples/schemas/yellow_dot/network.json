@@ -6757,11 +6757,12 @@
                   "Skills and expertise",
                   "A team or network",
                   "Resources or capital",
-                  "An existing business"
+                  "An existing business",
+                  "Mentorship"
                 ]
               }
             }
-            }
+          }
         }
       },
       "profile_completion_prompt": {
